@@ -666,21 +666,71 @@ fn execute_window_command(cmd string, class_name string, window_name string) {
 // ============================================================================
 
 fn show_osd_real(text string, timeout_ms int) {
-	// 获取程序路径
-	script_dir := os.dir(os.args[0])
-	osd_native := '${script_dir}/../osd_native.exe'
-
-	// 计算秒数
 	timeout_sec := timeout_ms / 1000
 
-	// 如果原生 OSD 程序存在，使用它
-	if os.exists(osd_native) {
-		os.execute('start /B "${osd_native}" "${text}" -t ${timeout_sec}')
-	} else {
-		// 后备：使用 PowerShell 脚本
-		osd_ps := '${script_dir}/../scripts/osd.ps1'
-		os.execute('start /B powershell -ExecutionPolicy Bypass -File "${osd_ps}" -TimeoutSec ${timeout_sec} -Text "${text}"')
+	$if windows {
+		// Windows：优先使用原生 OSD 可执行文件，降级到 PowerShell 脚本
+		script_dir := os.dir(os.args[0])
+		osd_native := '${script_dir}/../osd_native.exe'
+		if os.exists(osd_native) {
+			os.execute('start /B "${osd_native}" "${text}" -t ${timeout_sec}')
+		} else {
+			osd_ps := '${script_dir}/../scripts/osd.ps1'
+			os.execute('start /B powershell -ExecutionPolicy Bypass -File "${osd_ps}" -TimeoutSec ${timeout_sec} -Text "${text}"')
+		}
+	} $else $if macos {
+		// macOS：优先使用编译好的 osd_macos 二进制，降级到内联实现
+		script_dir := os.dir(os.args[0])
+		osd_bin := os.join_path(script_dir, 'osd_macos')
+		if os.exists(osd_bin) {
+			os.execute('"${osd_bin}" "${text}" -t ${timeout_sec}')
+		} else {
+			show_osd_macos_inline(text, timeout_ms)
+		}
+	} $else {
+		// Linux：使用 notify-send（libnotify），降级到终端输出
+		escaped := text.replace("'", "'\\''")
+		r := os.execute("which notify-send 2>/dev/null")
+		if r.exit_code == 0 {
+			os.execute("notify-send 'OSD' '${escaped}' -t ${timeout_ms} -u normal")
+		} else {
+			println('[OSD] ${text} (${timeout_sec}s)')
+		}
 	}
+}
+
+// ============================================================================
+// macOS 内联 OSD 实现（无需预先编译 osd_macos 二进制）
+// ============================================================================
+// 优先使用 Python3 + tkinter 浮层，降级到系统通知
+// ============================================================================
+fn show_osd_macos_inline(text string, timeout_ms int) {
+	timeout_sec := timeout_ms / 1000
+
+	// 检查 python3 可用性
+	py_check := os.execute('which python3 2>/dev/null')
+	if py_check.exit_code == 0 {
+		pid := os.getpid()
+		tmp_py := '/tmp/cax_osd_${pid}.py'
+		safe := text.replace('\\', '\\\\').replace('"', '\\"').replace('\r', '').replace('\n',
+			' ')
+		py_script := 'import tkinter as tk\nimport sys\ntry:\n    root = tk.Tk()\nexcept Exception:\n    sys.exit(1)\nroot.overrideredirect(True)\nroot.wm_attributes("-topmost", True)\nroot.wm_attributes("-alpha", 0.88)\nroot.configure(bg="black")\nsw = root.winfo_screenwidth()\nsh = root.winfo_screenheight()\ntext = "'
+			+ safe + '"\nw = min(sw - 40, max(600, len(text) * 28 + 120))\nh = 100\nroot.geometry(f"{w}x{h}+{(sw - w) // 2}+{sh - h - 60}")\ntry:\n    from tkinter import font as tkfont\n    f = tkfont.Font(family="Verdana", size=40, weight="bold")\nexcept Exception:\n    f = ("Verdana", 40, "bold")\nlbl = tk.Label(root, text=text, font=f, fg="#00FF00", bg="black", padx=20, pady=10)\nlbl.place(relx=0.5, rely=0.5, anchor="center")\nroot.after('
+			+ timeout_ms.str() + ', root.destroy)\nroot.mainloop()\n'
+		os.write_file(tmp_py, py_script) or {}
+		if os.exists(tmp_py) {
+			r := os.execute('python3 "${tmp_py}" 2>/dev/null')
+			os.rm(tmp_py) or {}
+			if r.exit_code == 0 {
+				return
+			}
+		}
+	}
+
+	// 降级：osascript 系统通知
+	escaped := text.replace('\\', '\\\\').replace('"', '\\"')
+	println('[OSD] ${text} (${timeout_sec}s)')
+	os.execute('osascript -e \'display notification "${escaped}" with title "OSD" subtitle "Showing for ${timeout_sec}s"\'')
 }
 
 // ============================================================================
