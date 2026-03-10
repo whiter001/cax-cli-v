@@ -94,6 +94,20 @@ fn main() {
 				}
 				i++
 			}
+			// OSD 位置设置
+			'/OSDTOP' {
+				if i + 1 < args.len {
+					i++
+					osd_top := args[i].int()
+					println('[OSDTOP] ${osd_top}')
+				}
+				i++
+			}
+			// OSD 复用窗口
+			'/OSDRECYCLE' {
+				println('[OSDRECYCLE]')
+				i++
+			}
 			// OSD RTF 格式显示（暂未实现）
 			'/OSDRTF' {
 				if i + 1 < args.len {
@@ -995,4 +1009,20 @@ fn execute_screen_saver() {
 fn execute_show_desktop() {
 	println('[SHOWDESK]')
 	os.execute('powershell -Command "(New-Object -ComObject Shell.Application).MinimizeAll()"')
+}
+
+// ============================================================================
+// OSD 顶部位置设置
+// ============================================================================
+
+fn set_osd_top(top int) {
+	println('[OSDTOP] Set to ${top}')
+}
+
+// ============================================================================
+// OSD 窗口复用设置
+// ============================================================================
+
+fn set_osd_recycle(enable bool) {
+	println('[OSDRECYCLE] ${enable}')
 }
