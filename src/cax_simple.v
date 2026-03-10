@@ -666,15 +666,21 @@ fn execute_window_command(cmd string, class_name string, window_name string) {
 // ============================================================================
 
 fn show_osd_real(text string, timeout_ms int) {
-	// 获取 PowerShell 脚本路径
+	// 获取程序路径
 	script_dir := os.dir(os.args[0])
-	osd_ps := '${script_dir}/../scripts/osd.ps1'
+	osd_native := '${script_dir}/../osd_native.exe'
 
 	// 计算秒数
 	timeout_sec := timeout_ms / 1000
 
-	// 异步执行 PowerShell 脚本（不阻塞主程序）
-	os.execute('start /B powershell -ExecutionPolicy Bypass -File "${osd_ps}" -TimeoutSec ${timeout_sec} -Text "${text}"')
+	// 如果原生 OSD 程序存在，使用它
+	if os.exists(osd_native) {
+		os.execute('start /B "${osd_native}" "${text}" -t ${timeout_sec}')
+	} else {
+		// 后备：使用 PowerShell 脚本
+		osd_ps := '${script_dir}/../scripts/osd.ps1'
+		os.execute('start /B powershell -ExecutionPolicy Bypass -File "${osd_ps}" -TimeoutSec ${timeout_sec} -Text "${text}"')
+	}
 }
 
 // ============================================================================
